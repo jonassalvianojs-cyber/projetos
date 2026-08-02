@@ -27,6 +27,7 @@ Interface estática em `static/` e banco SQLite em `data/`.
 - Agendas: `agenda_simples.py`, `agenda_visual.py` e `agenda.json`.
 - Tarefas e cadastro: `todo.py`, `todo_gui.py`, `tasks.json`, `cadastro.py`, `dados.json`.
 - Backup: `Backup.py` e `cloud_backup_gui.py`.
+- Backup em nuvem: `cloud_backup_app.py`.
 - Rede: `port_scan.py` e `scan_port.py`.
 - Estudos introdutórios: `aula_3.py`, `algoritimo.py`, `Boas_Vindas.py`, `Untitled-2.py`.
 
@@ -38,7 +39,7 @@ Interface estática em `static/` e banco SQLite em `data/`.
 
 ## Estado atual
 
-- O repositório ainda não possui commits.
+- O repositório reúne projetos locais de estudo e aplicações pessoais.
 - Os ambientes virtuais e caches ficam excluídos pelo `.gitignore`.
 - `algoritimo.py` precisa de correção: há texto solto na linha 2, causando erro de sintaxe.
 - Ainda não há arquivo de dependências (`requirements.txt` ou `pyproject.toml`).
@@ -48,4 +49,3 @@ Interface estática em `static/` e banco SQLite em `data/`.
 Não versionar `credentials.json`, `token.json`, chaves de API ou arquivos `.env`.
 Os programas que acessam rede, APIs, navegador ou interfaces gráficas devem ser
 executados manualmente, fora da etapa de validação automática.
-
