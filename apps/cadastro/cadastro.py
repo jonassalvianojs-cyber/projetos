@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-DATA_FILE = Path("dados.json")
+DATA_FILE = Path(__file__).with_name("dados.json")
 
 
 def carregar_dados() -> list[dict]:

@@ -1,15 +1,15 @@
 import json
-import os
+from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
-ARQUIVO = "agenda.json"
+ARQUIVO = Path(__file__).with_name("agenda.json")
 
 
 # -------------------- CAMADA DE DADOS --------------------
 def carregar_agenda():
-    if os.path.exists(ARQUIVO):
-        with open(ARQUIVO, "r", encoding="utf-8") as f:
+    if ARQUIVO.exists():
+        with ARQUIVO.open("r", encoding="utf-8") as f:
             try:
                 return json.load(f)
             except json.JSONDecodeError:
@@ -18,7 +18,7 @@ def carregar_agenda():
 
 
 def salvar_agenda(agenda):
-    with open(ARQUIVO, "w", encoding="utf-8") as f:
+    with ARQUIVO.open("w", encoding="utf-8") as f:
         json.dump(agenda, f, indent=4, ensure_ascii=False)
 
 

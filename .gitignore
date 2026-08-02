@@ -4,6 +4,8 @@ venv/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
 
 # Ferramentas e arquivos locais
 .vscode/
@@ -11,15 +13,17 @@ __pycache__/
 .DS_Store
 *.log
 
-# Segredos e credenciais OAuth
+# Segredos e credenciais
 .env
 .env.*
 credentials.json
 token.json
 client_secret*.json
 
-# Saidas e bancos gerados localmente
+# Bancos e saídas geradas localmente
 *.sqlite
 *.sqlite3
+*.db
 *.db-journal
-
+historia-pesquisa/data/*
+!historia-pesquisa/data/.gitkeep
