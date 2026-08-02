@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lu's Local AI Tester 🍑</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f0f11;
+            --card-bg: rgba(22, 22, 26, 0.7);
+            --border-color: rgba(255, 126, 95, 0.2);
+            --border-glow: rgba(255, 126, 95, 0.4);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-start: #ff7e5f;
+            --accent-end: #feb47b;
+            --success-color: #10b981;
+            --error-color: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(255, 126, 95, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(254, 180, 123, 0.08) 0%, transparent 40%);
+            padding: 20px;
+            overflow-x: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 680px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            backdrop-filter: blur(16px);
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 50px rgba(255, 126, 95, 0.03);
+            transition: all 0.4s ease;
+        }
+
+        .container:hover {
+            border-color: var(--border-glow);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 60px rgba(255, 126, 95, 0.06);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            font-weight: 300;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 100px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 15px;
+            border: 1px solid transparent;
+        }
+
+        .status-badge.checking {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--text-secondary);
+            border-color: rgba(156, 163, 175, 0.2);
+        }
+
+        .status-badge.ready {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success-color);
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        .status-badge.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--error-color);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            display: inline-block;
+        }
+
+        .chat-section {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .input-group {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            background: rgba(10, 10, 12, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 16px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            resize: vertical;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        textarea:focus {
+            border-color: var(--accent-start);
+            box-shadow: 0 0 15px rgba(255, 126, 95, 0.15);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--accent-start), var(--accent-end));
+            color: #0f0f11;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(255, 126, 95, 0.2);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 126, 95, 0.35);
+        }
+
+        .btn:disabled {
+            background: #27272a;
+            color: #71717a;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .output-box {
+            margin-top: 25px;
+            background: rgba(10, 10, 12, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            min-height: 80px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        .output-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-start);
+            margin-bottom: 10px;
+        }
+
+        .setup-guide {
+            margin-top: 30px;
+            background: rgba(239, 68, 68, 0.03);
+            border: 1px dashed rgba(239, 68, 68, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            display: none;
+        }
+
+        .setup-guide.visible {
+            display: block;
+        }
+
+        .setup-guide h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f87171;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .setup-steps {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .setup-steps code {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: var(--text-primary);
+        }
+
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        footer a {
+            color: var(--accent-start);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 126, 95, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 126, 95, 0.4);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Lu's Local AI Tester 🍑</h1>
+        <div class="subtitle">Teste o Gemini Nano rodando localmente no seu Chrome</div>
+        <div id="statusBadge" class="status-badge checking">
+            <span class="dot"></span>
+            <span id="statusText">Verificando API local...</span>
+        </div>
+    </header>
+
+    <div id="chatSection" class="chat-section">
+        <div class="input-group">
+            <textarea id="promptInput" placeholder="Digite uma mensagem para o Gemini Nano local... Ex: Diga olá e me dê uma curiosidade sobre história!"></textarea>
+        </div>
+        <button id="sendBtn" class="btn">
+            <span>Perguntar ao Gemini Nano 🚀</span>
+        </button>
+        
+        <div class="output-title">Resposta do Gemini Nano</div>
+        <div id="outputBox" class="output-box">Escreva sua pergunta acima e clique em perguntar para ver a mágica local acontecer! ✨</div>
+    </div>
+
+    <div id="setupGuide" class="setup-guide">
+        <h3>⚠️ O Gemini Nano não está ativo no seu Chrome!</h3>
+        <ul class="setup-steps">
+            <li>1. Acesse <code>chrome://flags/#optimization-guide-on-device-model</code> no Chrome e altere para <strong>Enabled BypassPerfRequirement</strong>.</li>
+            <li>2. Acesse <code>chrome://flags/#prompt-api-for-gemini-nano</code> e altere para <strong>Enabled</strong>.</li>
+            <li>3. Reinicie o navegador Chrome completamente.</li>
+            <li>4. Vá em <code>chrome://components</code> e procure por <strong>Optimization Guide On Device Model</strong>. Clique em "Verificar atualizações" para baixar o modelo (pode demorar um pouquinho, são cerca de 1,5GB).</li>
+            <li>5. Atualize esta página e venha testar! 🍑</li>
+        </ul>
+    </div>
+
+    <footer>
+        Desenvolvido com 💖 pela sua designer digital exclusiva, Lu!
+    </footer>
+</div>
+
+<script>
+    let aiSession = null;
+    let apiType = null;
+
+    const statusBadge = document.getElementById('statusBadge');
+    const statusText = document.getElementById('statusText');
+    const chatSection = document.getElementById('chatSection');
+    const setupGuide = document.getElementById('setupGuide');
+    const promptInput = document.getElementById('promptInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const outputBox = document.getElementById('outputBox');
+
+    async function init() {
+        let isSupported = false;
+
+        // Spec 1: LanguageModel (Nova Spec)
+        if (typeof LanguageModel !== 'undefined') {
+            isSupported = true;
+            apiType = 'LanguageModel';
+        } 
+        // Spec 2: window.ai.languageModel
+        else if (window.ai && window.ai.languageModel) {
+            isSupported = true;
+            apiType = 'languageModel';
+        } 
+        // Spec 3: window.ai.assistant (Spec Antiga)
+        else if (window.ai && window.ai.assistant) {
+            isSupported = true;
+            apiType = 'assistant';
+        }
+
+        if (!isSupported) {
+            showError("API de IA local não encontrada. Verifique se ativou as flags no chrome://flags.");
+            return;
+        }
+
+        try {
+            let availability = 'no';
+
+            if (apiType === 'LanguageModel') {
+                availability = await LanguageModel.availability();
+            } else if (apiType === 'languageModel') {
+                const capabilities = await window.ai.languageModel.capabilities();
+                availability = capabilities.available;
+            } else if (apiType === 'assistant') {
+                const capabilities = await window.ai.assistant.capabilities();
+                availability = capabilities.available;
+            }
+
+            if (availability === 'available' || availability === 'readily') {
+                showReady(`Gemini Nano Pronto (${availability}) 🟢`);
+            } else if (availability === 'downloadable' || availability === 'after-download') {
+                showError(`O modelo precisa ser baixado (${availability}). Verifique em chrome://components.`);
+            } else if (availability === 'downloading') {
+                showError("O modelo local está sendo baixado pelo Chrome... Aguarde concluír.");
+            } else {
+                showError(`A API existe, mas retornou indisponível (${availability}). Verifique chrome://on-device-internals.`);
+            }
+        } catch (e) {
+            console.error("Erro ao verificar disponibilidade:", e);
+            showError(`Erro ao inicializar: ${e.message}`);
+        }
+    }
+
+    function showReady(message) {
+        statusBadge.className = 'status-badge ready';
+        statusText.textContent = message;
+        chatSection.style.display = 'block';
+        setupGuide.classList.remove('visible');
+    }
+
+    function showError(message) {
+        statusBadge.className = 'status-badge error';
+        statusText.textContent = message;
+        chatSection.style.display = 'none';
+        setupGuide.classList.add('visible');
+    }
+
+    sendBtn.addEventListener('click', async () => {
+        const prompt = promptInput.value.trim();
+        if (!prompt) return;
+
+        sendBtn.disabled = true;
+        promptInput.disabled = true;
+        outputBox.textContent = "Processando localmente no seu computador... 🧠⚡";
+
+        try {
+            if (!aiSession) {
+                if (apiType === 'LanguageModel') {
+                    aiSession = await LanguageModel.create();
+                } else if (apiType === 'languageModel') {
+                    aiSession = await window.ai.languageModel.create();
+                } else if (apiType === 'assistant') {
+                    aiSession = await window.ai.assistant.create();
+                }
+            }
+
+            if (aiSession.promptStreaming) {
+                outputBox.textContent = "";
+                const stream = aiSession.promptStreaming(prompt);
+                for await (const chunk of stream) {
+                    outputBox.textContent = chunk;
+                }
+            } else {
+                const response = await aiSession.prompt(prompt);
+                outputBox.textContent = response;
+            }
+        } catch (error) {
+            outputBox.textContent = `❌ Erro de processamento: ${error.message}`;
+            aiSession = null; // Reseta sessão caso dê erro
+        } finally {
+            sendBtn.disabled = false;
+            promptInput.disabled = false;
+        }
+    });
+
+    // Inicializa a verificação
+    init();
+</script>
+</body>
+</html>

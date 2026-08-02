@@ -1,0 +1,69 @@
+#!/bin/sh
+# /etc/rc.d/rc.ollama
+# Script de inicialização do Ollama para Slackware 15
+# Criado por Lucy Sophia (Lu) — 2026
+
+OLLAMA_BIN="/usr/local/bin/ollama"
+OLLAMA_LOG="/var/log/ollama.log"
+OLLAMA_HOST="127.0.0.1"
+OLLAMA_PORT="11434"
+
+ollama_start() {
+    if pgrep -x "ollama" > /dev/null 2>&1; then
+        echo "Ollama já está em execução."
+        return 1
+    fi
+    echo "Iniciando Ollama..."
+    OLLAMA_HOST="${OLLAMA_HOST}:${OLLAMA_PORT}" \
+    nohup $OLLAMA_BIN serve >> $OLLAMA_LOG 2>&1 &
+    sleep 1
+    if pgrep -x "ollama" > /dev/null 2>&1; then
+        echo "Ollama iniciado com sucesso! PID: $(pgrep -x ollama)"
+    else
+        echo "Falha ao iniciar o Ollama. Verifique $OLLAMA_LOG"
+    fi
+}
+
+ollama_stop() {
+    if ! pgrep -x "ollama" > /dev/null 2>&1; then
+        echo "Ollama não está em execução."
+        return 1
+    fi
+    echo "Parando Ollama..."
+    pkill -x ollama
+    sleep 1
+    echo "Ollama parado."
+}
+
+ollama_status() {
+    if pgrep -x "ollama" > /dev/null 2>&1; then
+        echo "Ollama está RODANDO. PID: $(pgrep -x ollama)"
+    else
+        echo "Ollama está PARADO."
+    fi
+}
+
+ollama_restart() {
+    ollama_stop
+    sleep 1
+    ollama_start
+}
+
+case "$1" in
+    start)
+        ollama_start
+        ;;
+    stop)
+        ollama_stop
+        ;;
+    restart)
+        ollama_restart
+        ;;
+    status)
+        ollama_status
+        ;;
+    *)
+        echo "Uso: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

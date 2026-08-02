@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clio — Pesquisa em História</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="logo">
+                <h1>Clio</h1>
+                <p>Laboratório de Pesquisa em História</p>
+            </div>
+            <nav>
+                <button class="nav-btn active" data-section="projetos">📚 Projetos</button>
+                <button class="nav-btn" data-section="fontes">📖 Fontes</button>
+                <button class="nav-btn" data-section="notas">📝 Notas</button>
+                <button class="nav-btn" data-section="cronologia">📅 Cronologia</button>
+                <button class="nav-btn" data-section="busca">🔍 Pesquisa</button>
+                <button class="nav-btn" data-section="bibliografia">📋 Bibliografia</button>
+                <button class="nav-btn" data-section="metodologia">🎓 Metodologia</button>
+            </nav>
+        </aside>
+
+        <main class="main">
+            <!-- PROJETOS -->
+            <section id="projetos" class="section active">
+                <div class="page-header">
+                    <h2>Projetos de Pesquisa</h2>
+                    <p>Organize seus trabalhos acadêmicos: TCC, artigos, seminários e monografias.</p>
+                </div>
+                <div class="toolbar">
+                    <span></span>
+                    <button class="btn btn-primary" onclick="abrirModalProjeto()">+ Novo Projeto</button>
+                </div>
+                <div id="lista-projetos" class="card-grid"></div>
+            </section>
+
+            <!-- FONTES -->
+            <section id="fontes" class="section">
+                <div class="page-header">
+                    <h2>Fontes Históricas</h2>
+                    <p>Catalogue livros, artigos, documentos de arquivo, sites e fontes orais.</p>
+                </div>
+                <div class="toolbar">
+                    <div class="projeto-selector">
+                        <select id="sel-projeto-fontes" onchange="carregarFontes()">
+                            <option value="">Selecione um projeto...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="abrirModalFonte()">+ Nova Fonte</button>
+                </div>
+                <div class="guia-critica">
+                    <h4>Análise crítica da fonte</h4>
+                    <ul>
+                        <li><strong>Autenticidade:</strong> o documento é genuíno? Há indícios de falsificação?</li>
+                        <li><strong>Autoria:</strong> quem produziu? Qual sua posição social e intenção?</li>
+                        <li><strong>Contexto:</strong> quando e onde foi produzido? Quais circunstâncias?</li>
+                        <li><strong>Fiabilidade:</strong> o autor tinha acesso direto aos fatos?</li>
+                        <li><strong>Significado:</strong> o que a fonte revela e o que omite?</li>
+                    </ul>
+                </div>
+                <div id="lista-fontes"></div>
+            </section>
+
+            <!-- NOTAS -->
+            <section id="notas" class="section">
+                <div class="page-header">
+                    <h2>Notas de Pesquisa</h2>
+                    <p>Registre citações, paráfrases, observações e hipóteses vinculadas às fontes.</p>
+                </div>
+                <div class="toolbar">
+                    <div class="projeto-selector">
+                        <select id="sel-projeto-notas" onchange="carregarNotas()">
+                            <option value="">Selecione um projeto...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="abrirModalNota()">+ Nova Nota</button>
+                </div>
+                <div id="lista-notas"></div>
+            </section>
+
+            <!-- CRONOLOGIA -->
+            <section id="cronologia" class="section">
+                <div class="page-header">
+                    <h2>Linha do Tempo</h2>
+                    <p>Construa a cronologia dos fatos históricos do seu objeto de estudo.</p>
+                </div>
+                <div class="toolbar">
+                    <div class="projeto-selector">
+                        <select id="sel-projeto-eventos" onchange="carregarEventos()">
+                            <option value="">Selecione um projeto...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="abrirModalEvento()">+ Novo Evento</button>
+                </div>
+                <div id="lista-eventos" class="timeline"></div>
+            </section>
+
+            <!-- PESQUISA -->
+            <section id="busca" class="section">
+                <div class="page-header">
+                    <h2>Pesquisa</h2>
+                    <p>Busque na internet e encontre materiais para sua pesquisa histórica.</p>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-busca-tab="internet" onclick="trocarAbaBusca('internet')">🌐 Internet</button>
+                    <button class="tab" data-busca-tab="local" onclick="trocarAbaBusca('local')">📁 Meus dados</button>
+                </div>
+
+                <div id="painel-internet" class="tab-panel active">
+                    <div class="search-bar">
+                        <input type="text" id="input-pesquisa-web" placeholder="Ex: Revolução de 1930 causas, historiografia escravidão, arquivo nacional documentos..." onkeydown="if(event.key==='Enter')pesquisarInternet()">
+                        <button class="btn btn-primary" id="btn-pesquisa-web" onclick="pesquisarInternet()">Pesquisar na internet</button>
+                    </div>
+                    <p class="search-hint">Dica: inclua termos como "história", "acervo", "artigo" ou nomes de historiadores para resultados mais acadêmicos.</p>
+                    <div id="status-pesquisa-web" class="search-status"></div>
+                    <div id="resultados-web"></div>
+                </div>
+
+                <div id="painel-local" class="tab-panel">
+                    <div class="search-bar">
+                        <input type="text" id="input-busca" placeholder="Buscar em fontes, notas e eventos salvos..." onkeydown="if(event.key==='Enter')executarBusca()">
+                        <select id="sel-busca-projeto">
+                            <option value="">Todos os projetos</option>
+                        </select>
+                        <button class="btn btn-secondary" onclick="executarBusca()">Buscar</button>
+                    </div>
+                    <div id="resultados-busca" class="card"></div>
+                </div>
+            </section>
+
+            <!-- BIBLIOGRAFIA -->
+            <section id="bibliografia" class="section">
+                <div class="page-header">
+                    <h2>Bibliografia (ABNT)</h2>
+                    <p>Gere automaticamente as referências bibliográficas no padrão ABNT.</p>
+                </div>
+                <div class="toolbar">
+                    <div class="projeto-selector">
+                        <select id="sel-projeto-bib" onchange="carregarBibliografia()">
+                            <option value="">Selecione um projeto...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-secondary" onclick="copiarBibliografia()">📋 Copiar</button>
+                    <button class="btn btn-secondary" onclick="exportarBibliografia()">💾 Exportar .txt</button>
+                </div>
+                <div id="lista-bibliografia"></div>
+            </section>
+
+            <!-- METODOLOGIA -->
+            <section id="metodologia" class="section">
+                <div class="page-header">
+                    <h2>Guia Metodológico</h2>
+                    <p>Referências rápidas para a prática da pesquisa histórica.</p>
+                </div>
+                <div class="card">
+                    <h3>Classificação das fontes</h3>
+                    <p class="desc" style="margin-top:0.75rem">
+                        <span class="badge badge-primaria">Primária</span> Produzida no período estudado (documentos, cartas, jornais, registros).<br><br>
+                        <span class="badge badge-secundaria">Secundária</span> Produzida posteriormente por historiadores (livros, artigos, teses).<br><br>
+                        <span class="badge badge-terciaria">Terciária</span> Compilações e obras de referência (enciclopédias, dicionários).
+                    </p>
+                </div>
+                <div class="card">
+                    <h3>Etapas da pesquisa história</h3>
+                    <ol style="padding-left:1.25rem; font-size:0.9rem; color:var(--ink-muted)">
+                        <li style="margin-bottom:0.5rem"><strong>Definição do problema</strong> — delimitação temporal, espacial e temática</li>
+                        <li style="margin-bottom:0.5rem"><strong>Revisão bibliográfica</strong> — estado da arte e diálogo com a historiografia</li>
+                        <li style="margin-bottom:0.5rem"><strong>Levantamento de fontes</strong> — arquivos, bibliotecas, acervos digitais</li>
+                        <li style="margin-bottom:0.5rem"><strong>Análise crítica</strong> — externalismo e internalismo (Bloch, Febvre)</li>
+                        <li style="margin-bottom:0.5rem"><strong>Organização</strong> — fichamento, cronologia, categorias</li>
+                        <li style="margin-bottom:0.5rem"><strong>Redação</strong> — argumentação, citações e referências</li>
+                    </ol>
+                </div>
+                <div class="card">
+                    <h3>Acervos digitais recomendados</h3>
+                    <ul style="padding-left:1.25rem; font-size:0.9rem; color:var(--ink-muted)">
+                        <li><a href="https://www.bn.gov.br/" target="_blank">Biblioteca Nacional do Brasil</a></li>
+                        <li><a href="https://www.gov.br/an.gov.br/" target="_blank">Arquivo Nacional</a></li>
+                        <li><a href="https://www.periodicos.capes.gov.br/" target="_blank">Portal de Periódicos CAPES</a></li>
+                        <li><a href="https://www.jstor.org/" target="_blank">JSTOR</a></li>
+                        <li><a href="https://www.scielo.br/" target="_blank">SciELO Brasil</a></li>
+                        <li><a href="https://www.memoriadigitalbrasil.org.br/" target="_blank">Memória Digital Brasileira</a></li>
+                    </ul>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal Projeto -->
+    <div class="modal-overlay" id="modal-projeto">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="titulo-modal-projeto">Novo Projeto</h3>
+                <button class="close-btn" onclick="fecharModal('modal-projeto')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="projeto-id">
+                <div class="form-group">
+                    <label>Título do projeto</label>
+                    <input type="text" id="projeto-titulo" placeholder="Ex: A Revolução de 1930 no interior de São Paulo">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tema / Objeto</label>
+                        <input type="text" id="projeto-tema" placeholder="Ex: política regional">
+                    </div>
+                    <div class="form-group">
+                        <label>Período</label>
+                        <input type="text" id="projeto-periodo" placeholder="Ex: 1920–1945">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Descrição / Problema de pesquisa</label>
+                    <textarea id="projeto-descricao" placeholder="Qual pergunta sua pesquisa busca responder?"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="projeto-status">
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="revisao">Em revisão</option>
+                        <option value="concluido">Concluído</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="fecharModal('modal-projeto')">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarProjeto()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Fonte -->
+    <div class="modal-overlay" id="modal-fonte">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="titulo-modal-fonte">Nova Fonte</h3>
+                <button class="close-btn" onclick="fecharModal('modal-fonte')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="fonte-id">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tipo de fonte</label>
+                        <select id="fonte-tipo" onchange="ajustarCamposFonte()">
+                            <option value="livro">Livro</option>
+                            <option value="artigo">Artigo de periódico</option>
+                            <option value="capitulo">Capítulo de livro</option>
+                            <option value="tese">Tese / Dissertação</option>
+                            <option value="arquivo">Documento de arquivo</option>
+                            <option value="site">Site / Recurso digital</option>
+                            <option value="oral">História oral</option>
+                            <option value="outro">Outro</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Classificação</label>
+                        <select id="fonte-classificacao">
+                            <option value="primaria">Fonte primária</option>
+                            <option value="secundaria" selected>Fonte secundária</option>
+                            <option value="terciaria">Fonte terciária</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Título</label>
+                    <input type="text" id="fonte-titulo" placeholder="Título da obra ou documento">
+                </div>
+                <div class="form-group">
+                    <label>Autor(es)</label>
+                    <input type="text" id="fonte-autores" placeholder="SOBRENOME, Nome. Use ; para separar autores">
+                </div>
+                <div class="form-row-3">
+                    <div class="form-group">
+                        <label>Ano</label>
+                        <input type="text" id="fonte-ano" placeholder="2020">
+                    </div>
+                    <div class="form-group">
+                        <label>Local</label>
+                        <input type="text" id="fonte-local" placeholder="São Paulo">
+                    </div>
+                    <div class="form-group">
+                        <label>Editora / Arquivo</label>
+                        <input type="text" id="fonte-editora" placeholder="Companhia das Letras">
+                    </div>
+                </div>
+                <div class="form-row" id="campos-periodico">
+                    <div class="form-group">
+                        <label>Revista</label>
+                        <input type="text" id="fonte-revista">
+                    </div>
+                    <div class="form-group">
+                        <label>Volume / Número / Páginas</label>
+                        <div class="form-row-3" style="gap:0.5rem">
+                            <input type="text" id="fonte-volume" placeholder="Vol.">
+                            <input type="text" id="fonte-numero" placeholder="Nº">
+                            <input type="text" id="fonte-paginas" placeholder="p.">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group" id="campo-url">
+                    <label>URL</label>
+                    <input type="url" id="fonte-url" placeholder="https://...">
+                </div>
+                <div class="form-group">
+                    <label>Notas de análise crítica</label>
+                    <textarea id="fonte-critica" placeholder="Autenticidade, contexto, vieses, limitações..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Tags (separadas por vírgula)</label>
+                    <input type="text" id="fonte-tags" placeholder="república, política, SP">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="fecharModal('modal-fonte')">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarFonte()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nota -->
+    <div class="modal-overlay" id="modal-nota">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="titulo-modal-nota">Nova Nota</h3>
+                <button class="close-btn" onclick="fecharModal('modal-nota')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="nota-id">
+                <div class="form-group">
+                    <label>Título / Tema da nota</label>
+                    <input type="text" id="nota-titulo" placeholder="Ex: Papel das oligarquias cafeeiras">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Fonte vinculada</label>
+                        <select id="nota-fonte-id">
+                            <option value="">Nenhuma</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Página / Folha</label>
+                        <input type="text" id="nota-pagina" placeholder="p. 45-48">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Conteúdo</label>
+                    <textarea id="nota-conteudo" style="min-height:160px" placeholder="Citação direta, paráfrase ou observação..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Tags</label>
+                    <input type="text" id="nota-tags" placeholder="economia, elite local">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="fecharModal('modal-nota')">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarNota()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Evento -->
+    <div class="modal-overlay" id="modal-evento">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="titulo-modal-evento">Novo Evento</h3>
+                <button class="close-btn" onclick="fecharModal('modal-evento')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="evento-id">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Data</label>
+                        <input type="text" id="evento-data" placeholder="15/11/1889 ou 1889 ou século XIX">
+                    </div>
+                    <div class="form-group">
+                        <label>Importância</label>
+                        <select id="evento-importancia">
+                            <option value="alta">Alta</option>
+                            <option value="media" selected>Média</option>
+                            <option value="baixa">Baixa</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Título do evento</label>
+                    <input type="text" id="evento-titulo" placeholder="Ex: Proclamação da República">
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <textarea id="evento-descricao" placeholder="Contexto, atores, consequências..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="fecharModal('modal-evento')">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarEvento()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+    <script src="/static/app.js"></script>
+</body>
+</html>

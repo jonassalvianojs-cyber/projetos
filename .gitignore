@@ -1,0 +1,25 @@
+# Ambientes virtuais e caches Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ferramentas e arquivos locais
+.vscode/
+.idea/
+.DS_Store
+*.log
+
+# Segredos e credenciais OAuth
+.env
+.env.*
+credentials.json
+token.json
+client_secret*.json
+
+# Saidas e bancos gerados localmente
+*.sqlite
+*.sqlite3
+*.db-journal
+
