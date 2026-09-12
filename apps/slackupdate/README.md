@@ -2,6 +2,8 @@
 
 Interface gráfica inicial para um futuro atualizador do Slackware. O botão **Ler pacotes instalados** lê somente os nomes registrados em `/var/log/packages`. **Consultar atualizações on-line** solicita autorização administrativa apenas para atualizar os metadados assinados do `slackpkg` e listar candidatos a upgrade. O comando recebe uma resposta obrigatória `não`: não baixa, instala ou remove pacotes. O botão **Limpar atualizações antigas** ainda é uma simulação e, na versão funcional, deverá limpar somente arquivos de pacotes já baixados em cache — nunca pacotes instalados.
 
+Há uma área separada para **Kernel (opcional)**. Ela identifica registros locais de kernel e mantém a opção desmarcada por padrão; atualizações de kernel jamais entram automaticamente em uma futura instalação. A área **Nova versão do Slackware** consulta o índice HTTPS de mirrors do Slackware e informa a versão estável mais recente, sem iniciar qualquer upgrade de distribuição.
+
 ## Executar localmente
 
 No diretório do projeto, execute:

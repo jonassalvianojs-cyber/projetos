@@ -2,8 +2,11 @@
 """Modo seguro inicial do SlackUpdate: somente leitura de pacotes locais."""
 
 import gi
+import re
 import subprocess
 import threading
+from urllib.error import URLError
+from urllib.request import urlopen
 from pathlib import Path
 
 gi.require_version("Gtk", "3.0")
@@ -12,6 +15,8 @@ from gi.repository import GLib, Gtk
 
 APP_NAME = "SlackUpdate — Protótipo"
 PACKAGE_DATABASE = Path("/var/log/packages")
+SLACKWARE_VERSION_FILE = Path("/etc/slackware-version")
+SLACKWARE_RELEASE_INDEX = "https://mirrors.slackware.com/slackware/"
 SAMPLE_PACKAGES = [
     (True, "openssl", "1.1.1w-x86_64-1", "1.1.1w-x86_64-2_slack15.0", "Segurança", "4,2 MB"),
     (True, "mozilla-firefox", "128.12.0esr-x86_64-1", "128.13.0esr-x86_64-1", "Aplicativo", "76,8 MB"),
@@ -32,7 +37,7 @@ class SlackUpdate(Gtk.Application):
             return
 
         self.window = Gtk.ApplicationWindow(application=self, title=APP_NAME)
-        self.window.set_default_size(980, 620)
+        self.window.set_default_size(980, 760)
         self.window.set_border_width(16)
         self.window.connect("delete-event", lambda *_: False)
 
@@ -61,8 +66,13 @@ class SlackUpdate(Gtk.Application):
 
         notice = Gtk.InfoBar()
         notice.set_message_type(Gtk.MessageType.INFO)
-        notice.get_content_area().add(Gtk.Label(label="Modo seguro ativo: lê apenas /var/log/packages. Consultas online e instalações estão desativadas."))
+        notice.get_content_area().add(Gtk.Label(label="Modo seguro ativo: a consulta on-line só atualiza metadados e nunca instala, remove ou baixa pacotes."))
         root.pack_start(notice, False, False, 0)
+
+        overview = Gtk.Box(spacing=14)
+        overview.pack_start(self.make_kernel_panel(), True, True, 0)
+        overview.pack_start(self.make_release_panel(), True, True, 0)
+        root.pack_start(overview, False, False, 0)
 
         pane = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         pane.set_position(700)
@@ -119,6 +129,34 @@ class SlackUpdate(Gtk.Application):
 
         self.window.show_all()
 
+    def make_kernel_panel(self):
+        frame = Gtk.Frame(label="Kernel (opcional)")
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, margin=10)
+        self.kernel_opt_in = Gtk.CheckButton(label="Incluir atualizações de kernel na instalação")
+        self.kernel_opt_in.set_active(False)
+        self.kernel_opt_in.connect("toggled", self.on_kernel_opt_in_changed)
+        content.pack_start(self.kernel_opt_in, False, False, 0)
+        self.kernel_label = Gtk.Label()
+        self.kernel_label.set_halign(Gtk.Align.START)
+        self.kernel_label.set_line_wrap(True)
+        content.pack_start(self.kernel_label, False, False, 0)
+        frame.add(content)
+        self.refresh_installed_kernel_status()
+        return frame
+
+    def make_release_panel(self):
+        frame = Gtk.Frame(label="Nova versão do Slackware")
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5, margin=10)
+        self.release_label = Gtk.Label(label=self.get_installed_slackware_version())
+        self.release_label.set_halign(Gtk.Align.START)
+        self.release_label.set_line_wrap(True)
+        content.pack_start(self.release_label, False, False, 0)
+        release_button = Gtk.Button(label="Verificar nova versão")
+        release_button.connect("clicked", self.on_check_release)
+        content.pack_start(release_button, False, False, 0)
+        frame.add(content)
+        return frame
+
     def make_tree(self):
         for package in SAMPLE_PACKAGES:
             self.store.append(package)
@@ -140,6 +178,29 @@ class SlackUpdate(Gtk.Application):
         parts = record_name.rsplit("-", 3)
         return parts[0] if len(parts) == 4 else record_name
 
+    @staticmethod
+    def installed_records_matching(prefix):
+        if not PACKAGE_DATABASE.is_dir():
+            return []
+        try:
+            return sorted(path.name for path in PACKAGE_DATABASE.iterdir() if path.is_file() and path.name.startswith(prefix))
+        except OSError:
+            return []
+
+    def refresh_installed_kernel_status(self):
+        kernels = self.installed_records_matching("kernel-")
+        if kernels:
+            self.kernel_label.set_text("Kernel(es) instalado(s): " + ", ".join(kernels))
+        else:
+            self.kernel_label.set_text("Nenhum registro de kernel encontrado em /var/log/packages.")
+
+    @staticmethod
+    def get_installed_slackware_version():
+        try:
+            return "Sistema instalado: " + SLACKWARE_VERSION_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            return "Não foi possível identificar a versão instalada do Slackware."
+
     def on_read_installed_packages(self, _button):
         if not PACKAGE_DATABASE.is_dir():
             self.status.set_text("Base de pacotes não encontrada: {}".format(PACKAGE_DATABASE))
@@ -158,6 +219,7 @@ class SlackUpdate(Gtk.Application):
             "Lista lida de {}. Selecione um pacote para ver o registro local.".format(PACKAGE_DATABASE)
         )
         self.status.set_text("Modo seguro: {} pacote(s) instalado(s) lido(s). Nenhuma consulta à internet foi feita.".format(len(records)))
+        self.refresh_installed_kernel_status()
 
     def on_online_check(self, _button):
         self.status.set_text("Consultando o mirror e preparando a lista de atualizações…")
@@ -192,10 +254,46 @@ class SlackUpdate(Gtk.Application):
 
     def show_online_result(self, text, success):
         self.updates_view.get_buffer().set_text(text)
+        self.show_kernel_candidates(text if success else "")
         if success:
             self.status.set_text("Consulta concluída. A lista acima é somente informativa; nenhuma atualização foi instalada.")
         else:
             self.status.set_text("Consulta não concluída. Nenhum pacote foi instalado.")
+        return False
+
+    def show_kernel_candidates(self, text):
+        candidates = sorted(set(re.findall(r"\bkernel-(?:generic|huge|modules|source|firmware)-[^\s]+", text)))
+        if candidates:
+            prefix = "Atualizações opcionais encontradas: "
+            self.kernel_label.set_text(prefix + ", ".join(candidates))
+        else:
+            self.refresh_installed_kernel_status()
+
+    def on_kernel_opt_in_changed(self, button):
+        if button.get_active():
+            self.status.set_text("Kernel marcado como opcional. Ele só será considerado quando a instalação real for implementada.")
+        else:
+            self.status.set_text("Kernel desmarcado. Atualizações de kernel permanecerão fora da instalação.")
+
+    def on_check_release(self, _button):
+        self.release_label.set_text("Verificando no mirror oficial…")
+        threading.Thread(target=self.run_release_check, daemon=True).start()
+
+    def run_release_check(self):
+        try:
+            with urlopen(SLACKWARE_RELEASE_INDEX, timeout=30) as response:
+                index = response.read().decode("utf-8", errors="replace")
+            versions = re.findall(r"slackware(?:64)?-([0-9]+(?:\.[0-9]+)+)/", index)
+            if not versions:
+                raise ValueError("Nenhuma versão estável foi identificada na resposta do mirror.")
+            newest = max(versions, key=lambda value: tuple(int(part) for part in value.split(".")))
+            message = "Última versão estável encontrada no mirror: Slackware {}. Nenhum upgrade foi iniciado.".format(newest)
+        except (OSError, URLError, ValueError) as error:
+            message = "Não foi possível verificar a versão mais recente: {}".format(error)
+        GLib.idle_add(self.show_release_result, message)
+
+    def show_release_result(self, message):
+        self.release_label.set_text(message)
         return False
 
     def on_toggled(self, _renderer, path):
