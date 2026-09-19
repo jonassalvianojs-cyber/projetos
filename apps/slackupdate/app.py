@@ -14,15 +14,12 @@ from gi.repository import GLib, Gtk
 
 
 APP_NAME = "SlackUpdate — Protótipo"
+DEVELOPER_CREDIT = "Desenvolvido por JONAS DE OLIVEIRA SALVIANO • VibeCoding"
 PACKAGE_DATABASE = Path("/var/log/packages")
 SLACKWARE_VERSION_FILE = Path("/etc/slackware-version")
 SLACKWARE_RELEASE_INDEX = "https://mirrors.slackware.com/slackware/"
-SAMPLE_PACKAGES = [
-    (True, "openssl", "1.1.1w-x86_64-1", "1.1.1w-x86_64-2_slack15.0", "Segurança", "4,2 MB"),
-    (True, "mozilla-firefox", "128.12.0esr-x86_64-1", "128.13.0esr-x86_64-1", "Aplicativo", "76,8 MB"),
-    (True, "kernel-firmware", "20240709-noarch-1", "20250613-noarch-1", "Sistema", "98,1 MB"),
-    (False, "git", "2.46.0-x86_64-1", "2.47.1-x86_64-1", "Aplicativo", "7,5 MB"),
-]
+PACKAGE_EXTENSIONS = (".tgz", ".tbz", ".tlz", ".txz")
+PACKAGE_ARCHITECTURES = re.compile(r"^(?:x86_64|i[3-6]86|noarch|fw)$")
 
 
 class SlackUpdate(Gtk.Application):
@@ -47,9 +44,9 @@ class SlackUpdate(Gtk.Application):
         header = Gtk.Box(spacing=12)
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         title = Gtk.Label()
-        title.set_markup("<span size='xx-large' weight='bold'>Atualizações disponíveis</span>")
+        title.set_markup("<span size='xx-large' weight='bold'>Slackware™ Update</span>")
         title.set_halign(Gtk.Align.START)
-        subtitle = Gtk.Label(label="Modo seguro: somente leitura. Nenhuma alteração será feita no sistema.")
+        subtitle = Gtk.Label(label="Atualizador não oficial • modo seguro, sem alterações automáticas.")
         subtitle.get_style_context().add_class("dim-label")
         subtitle.set_halign(Gtk.Align.START)
         title_box.pack_start(title, False, False, 0)
@@ -114,16 +111,23 @@ class SlackUpdate(Gtk.Application):
         root.pack_start(updates_frame, False, False, 0)
 
         footer = Gtk.Box(spacing=10)
-        self.status = Gtk.Label(label="3 atualizações selecionadas — 179,1 MB para baixar")
+        footer_left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.status = Gtk.Label(label="Nenhuma consulta realizada.")
         self.status.set_halign(Gtk.Align.START)
-        footer.pack_start(self.status, True, True, 0)
+        footer_left.pack_start(self.status, False, False, 0)
+        credit = Gtk.Label(label=DEVELOPER_CREDIT)
+        credit.set_halign(Gtk.Align.START)
+        credit.get_style_context().add_class("dim-label")
+        footer_left.pack_start(credit, False, False, 0)
+        footer.pack_start(footer_left, True, True, 0)
         cleanup_button = Gtk.Button(label="Limpar atualizações antigas")
         cleanup_button.set_tooltip_text("Remove somente arquivos de pacotes já baixados; nunca pacotes instalados.")
         cleanup_button.connect("clicked", self.on_cleanup_old_updates)
         footer.pack_end(cleanup_button, False, False, 0)
-        self.update_button = Gtk.Button(label="Atualizar selecionados")
+        self.update_button = Gtk.Button(label="Instalação desativada")
         self.update_button.get_style_context().add_class("suggested-action")
-        self.update_button.connect("clicked", self.on_update_selected)
+        self.update_button.set_sensitive(False)
+        self.update_button.set_tooltip_text("A instalação será habilitada somente após a validação do modo seguro.")
         footer.pack_end(self.update_button, False, False, 0)
         root.pack_end(footer, False, False, 0)
 
@@ -158,8 +162,6 @@ class SlackUpdate(Gtk.Application):
         return frame
 
     def make_tree(self):
-        for package in SAMPLE_PACKAGES:
-            self.store.append(package)
         tree = Gtk.TreeView(model=self.store)
         tree.set_headers_visible(True)
         renderer_toggle = Gtk.CellRendererToggle()
@@ -177,6 +179,53 @@ class SlackUpdate(Gtk.Application):
         """Extrai o nome de um registro Slackware sem abrir nem alterar arquivos."""
         parts = record_name.rsplit("-", 3)
         return parts[0] if len(parts) == 4 else record_name
+
+    @staticmethod
+    def parse_package_identifier(identifier):
+        """Retorna nome, versão, arquitetura, build e registro de um pacote Slackware."""
+        package = Path(identifier.strip()).name
+        for extension in PACKAGE_EXTENSIONS:
+            if package.endswith(extension):
+                package = package[:-len(extension)]
+                break
+        parts = package.rsplit("-", 3)
+        if len(parts) != 4 or not parts[0] or not PACKAGE_ARCHITECTURES.match(parts[2]):
+            return None
+        return {
+            "name": parts[0],
+            "version": parts[1],
+            "arch": parts[2],
+            "build": parts[3],
+            "record": package,
+        }
+
+    @classmethod
+    def parse_upgrade_candidates(cls, output):
+        """Extrai somente identificadores de pacote das linhas do slackpkg."""
+        candidates = {}
+        for line in output.splitlines():
+            value = line.strip()
+            if not value or any(character.isspace() for character in value):
+                continue
+            package = cls.parse_package_identifier(value)
+            if package:
+                candidates[package["name"]] = package
+        return [candidates[name] for name in sorted(candidates)]
+
+    @classmethod
+    def installed_package_map(cls):
+        packages = {}
+        if not PACKAGE_DATABASE.is_dir():
+            return packages
+        try:
+            records = (path.name for path in PACKAGE_DATABASE.iterdir() if path.is_file())
+            for record in records:
+                package = cls.parse_package_identifier(record)
+                if package:
+                    packages.setdefault(package["name"], []).append(package["record"])
+        except OSError:
+            return {}
+        return packages
 
     @staticmethod
     def installed_records_matching(prefix):
@@ -254,18 +303,35 @@ class SlackUpdate(Gtk.Application):
 
     def show_online_result(self, text, success):
         self.updates_view.get_buffer().set_text(text)
-        self.show_kernel_candidates(text if success else "")
         if success:
-            self.status.set_text("Consulta concluída. A lista acima é somente informativa; nenhuma atualização foi instalada.")
+            candidates = self.populate_update_table(text)
+            self.show_kernel_candidates(candidates)
+            if candidates:
+                self.status.set_text(
+                    "Consulta concluída: {} atualização(ões) encontrada(s). Nenhuma foi instalada.".format(len(candidates))
+                )
+            else:
+                self.status.set_text("Consulta concluída: nenhuma atualização de pacote foi encontrada.")
         else:
             self.status.set_text("Consulta não concluída. Nenhum pacote foi instalado.")
         return False
 
-    def show_kernel_candidates(self, text):
-        candidates = sorted(set(re.findall(r"\bkernel-(?:generic|huge|modules|source|firmware)-[^\s]+", text)))
-        if candidates:
-            prefix = "Atualizações opcionais encontradas: "
-            self.kernel_label.set_text(prefix + ", ".join(candidates))
+    def populate_update_table(self, output):
+        candidates = self.parse_upgrade_candidates(output)
+        installed = self.installed_package_map()
+        self.store.clear()
+        for package in candidates:
+            is_kernel = package["name"].startswith("kernel-")
+            category = "Kernel" if is_kernel else ("Segurança" if "_slack" in package["build"] else "Sistema")
+            current = ", ".join(installed.get(package["name"], ["Não identificado"]))
+            selected = False if is_kernel else True
+            self.store.append((selected, package["name"], current, package["record"], category, "Não informado"))
+        return candidates
+
+    def show_kernel_candidates(self, candidates):
+        kernel_candidates = [package["record"] for package in candidates if package["name"].startswith("kernel-")]
+        if kernel_candidates:
+            self.kernel_label.set_text("Atualizações opcionais encontradas: " + ", ".join(kernel_candidates))
         else:
             self.refresh_installed_kernel_status()
 
@@ -298,6 +364,9 @@ class SlackUpdate(Gtk.Application):
 
     def on_toggled(self, _renderer, path):
         row = self.store[path]
+        if row[4] == "Kernel" and not self.kernel_opt_in.get_active():
+            self.status.set_text("Para selecionar um kernel, marque primeiro a opção “Incluir atualizações de kernel”.")
+            return
         row[0] = not row[0]
         self.refresh_status()
 
@@ -315,21 +384,6 @@ class SlackUpdate(Gtk.Application):
     def refresh_status(self):
         count = sum(row[0] for row in self.store)
         self.status.set_text("{} atualização(ões) selecionada(s) — protótipo sem instalação".format(count))
-
-    def on_update_selected(self, _button):
-        selected = sum(row[0] for row in self.store)
-        dialog = Gtk.MessageDialog(
-            transient_for=self.window,
-            modal=True,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
-            text="Simulação concluída",
-        )
-        dialog.format_secondary_text(
-            "{} pacote(s) seriam atualizados. No modo seguro, nenhum comando foi executado e nada foi alterado.".format(selected)
-        )
-        dialog.run()
-        dialog.destroy()
 
     def on_cleanup_old_updates(self, _button):
         dialog = Gtk.MessageDialog(
