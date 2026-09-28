@@ -8,9 +8,10 @@ import threading
 from urllib.error import URLError
 from urllib.request import urlopen
 from pathlib import Path
+from file_inspection import default_roots, scan_files, cleanup_identity, trash_selected
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import GLib, Gtk
+from gi.repository import Gio, GLib, Gtk
 
 
 APP_NAME = "SlackUpdate — Protótipo"
@@ -26,6 +27,7 @@ class SlackUpdate(Gtk.Application):
     def __init__(self):
         super().__init__(application_id="org.slackware.SlackUpdatePrototype")
         self.window = None
+        self.inspection_window = None
         self.store = Gtk.ListStore(bool, str, str, str, str, str)
 
     def do_activate(self):
@@ -120,8 +122,9 @@ class SlackUpdate(Gtk.Application):
         credit.get_style_context().add_class("dim-label")
         footer_left.pack_start(credit, False, False, 0)
         footer.pack_start(footer_left, True, True, 0)
-        cleanup_button = Gtk.Button(label="Limpar atualizações antigas")
-        cleanup_button.set_tooltip_text("Remove somente arquivos de pacotes já baixados; nunca pacotes instalados.")
+        cleanup_button = Gtk.Button(label="Verificar arquivos")
+        cleanup_button.set_image(Gtk.Image.new_from_icon_name("system-search-symbolic", Gtk.IconSize.BUTTON))
+        cleanup_button.set_tooltip_text("Consultar temporários, cache e pacotes baixados")
         cleanup_button.connect("clicked", self.on_cleanup_old_updates)
         footer.pack_end(cleanup_button, False, False, 0)
         self.update_button = Gtk.Button(label="Instalação desativada")
@@ -386,24 +389,143 @@ class SlackUpdate(Gtk.Application):
         self.status.set_text("{} atualização(ões) selecionada(s) — protótipo sem instalação".format(count))
 
     def on_cleanup_old_updates(self, _button):
-        dialog = Gtk.MessageDialog(
-            transient_for=self.window,
-            modal=True,
-            message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.NONE,
-            text="Limpar arquivos de atualizações antigas?",
-        )
-        dialog.format_secondary_text(
-            "No produto final, esta ação limpará apenas pacotes baixados em cache. "
-            "Ela nunca remove programas ou componentes instalados do Slackware.\n\n"
-            "Neste protótipo, a limpeza é apenas simulada."
-        )
-        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Simular limpeza", Gtk.ResponseType.OK)
-        response = dialog.run()
-        dialog.destroy()
-        if response == Gtk.ResponseType.OK:
-            self.status.set_text("Limpeza simulada concluída — 182,4 MB seriam liberados.")
+        if self.inspection_window is not None:
+            self.inspection_window.present()
+            return
+        window = Gtk.ApplicationWindow(application=self, title="SlackUpdate - Arquivos temporários e pacotes")
+        self.inspection_window = window
+        window.set_transient_for(self.window)
+        window.set_destroy_with_parent(True)
+        window.set_default_size(940, 540)
+        window.connect("destroy", self.on_inspection_destroy)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=12)
+        window.add(box)
+        toolbar = Gtk.Box(spacing=10)
+        refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
+        refresh.set_tooltip_text("Consultar arquivos novamente")
+        toolbar.pack_start(refresh, False, False, 0)
+        delete = Gtk.Button(label="Excluir selecionados")
+        delete.set_image(Gtk.Image.new_from_icon_name("user-trash-symbolic", Gtk.IconSize.BUTTON))
+        delete.set_sensitive(False)
+        toolbar.pack_end(delete, False, False, 0)
+        summary = Gtk.Label(label="Consultando arquivos...")
+        summary.set_line_wrap(True)
+        summary.set_xalign(0)
+        toolbar.pack_start(summary, True, True, 0)
+        box.pack_start(toolbar, False, False, 0)
+        store = Gtk.ListStore(str, str, str, str, str, bool, bool)
+        identities = {}
+        roots = default_roots()
+        tree = Gtk.TreeView(model=store)
+        toggle = Gtk.CellRendererToggle()
+        tree.append_column(Gtk.TreeViewColumn("", toggle, active=5, activatable=6, sensitive=6))
+
+        def toggled(_renderer, path):
+            if store[path][6]:
+                store[path][5] = not store[path][5]
+            delete.set_sensitive(any(row[5] for row in store))
+
+        toggle.connect("toggled", toggled)
+        for index, title in enumerate(("Arquivo", "Categoria", "Tamanho", "Idade", "Situação")):
+            renderer = Gtk.CellRendererText()
+            column = Gtk.TreeViewColumn(title, renderer, text=index)
+            column.set_resizable(True)
+            tree.append_column(column)
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.add(tree)
+        box.pack_start(scroll, True, True, 0)
+        details = Gtk.Label()
+        details.set_xalign(0)
+        details.set_line_wrap(True)
+        details.set_selectable(True)
+        box.pack_start(details, False, False, 0)
+
+        def refresh_files(_button=None, report=""):
+            refresh.set_sensitive(False)
+            delete.set_sensitive(False)
+            tree.set_sensitive(False)
+            identities.clear()
+            summary.set_text("Consultando arquivos...")
+            details.set_text("")
+            store.clear()
+
+            def finish(rows, warnings, snapshots):
+                if self.inspection_window is not window:
+                    return False
+                for path, category, size, days, status in rows:
+                    store.append((path, category, GLib.format_size(size), "{} dias".format(days), status, False, path in snapshots))
+                identities.update(snapshots)
+                summary.set_text("{} arquivos | {}".format(
+                    len(rows), GLib.format_size(sum(row[2] for row in rows))))
+                details.set_text("\n".join(filter(None, [report, *warnings[:3]])))
+                refresh.set_sensitive(True)
+                tree.set_sensitive(True)
+                return False
+
+            def work():
+                snapshots = {}
+                try:
+                    rows, warnings = scan_files(roots, self.installed_package_map(), self.parse_package_identifier)
+                    for path, category, _size, _days, _status in rows:
+                        if category != "Pacote baixado":
+                            try:
+                                snapshots[path] = cleanup_identity(path, roots)
+                            except (OSError, ValueError):
+                                pass
+                except Exception as error:
+                    rows, warnings = [], ["Consulta não concluída: {}".format(error)]
+                GLib.idle_add(finish, rows, warnings, snapshots)
+
+            threading.Thread(target=work, daemon=True).start()
+
+        def delete_files(_button):
+            items = [(row[0], identities[row[0]]) for row in store if row[5] and row[6]]
+            if not items:
+                return
+            dialog = Gtk.MessageDialog(transient_for=window, modal=True,
+                message_type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.CANCEL,
+                text="Mover {} arquivos para a lixeira?".format(len(items)))
+            dialog.format_secondary_text(
+                "Feche os aplicativos e navegadores antes de continuar. Arquivos temporários podem estar em uso.\n\n"
+                + "\n".join(path for path, _identity in items[:8])
+                + ("\n..." if len(items) > 8 else ""))
+            dialog.add_button("Mover para a lixeira", Gtk.ResponseType.OK)
+            response = dialog.run()
+            dialog.destroy()
+            if response != Gtk.ResponseType.OK:
+                return
+            delete.set_sensitive(False)
+            refresh.set_sensitive(False)
+            tree.set_sensitive(False)
+            summary.set_text("Movendo arquivos para a lixeira...")
+
+            def trash(path):
+                try:
+                    return Gio.File.new_for_path(path).trash(None)
+                except GLib.Error as error:
+                    raise RuntimeError(error.message) from error
+
+            def finish_delete(completed, errors):
+                if self.inspection_window is window:
+                    report = "{} enviados à lixeira; {} falhas.".format(len(completed), len(errors))
+                    refresh_files(report="\n".join([report, *errors[:3]]))
+                return False
+
+            def work_delete():
+                completed, errors = trash_selected(items, roots, trash)
+                GLib.idle_add(finish_delete, completed, errors)
+
+            threading.Thread(target=work_delete, daemon=True).start()
+
+        delete.connect("clicked", delete_files)
+
+        refresh.connect("clicked", refresh_files)
+        window.show_all()
+        refresh_files()
+
+    def on_inspection_destroy(self, _window):
+        self.inspection_window = None
 
 
 if __name__ == "__main__":
