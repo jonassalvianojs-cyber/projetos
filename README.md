@@ -52,6 +52,8 @@ python jogos/snake.py
 
 ### Jogos
 
+- [Ecos de Aurora](jogos/ecos-de-aurora/) — RPG 2D em Python/Tkinter, com exploração e combate em tempo real.
+
 - `jogos/jogo_da_velha.py`
 - `jogos/snake.py`
 - `jogos/space_invader.py`
