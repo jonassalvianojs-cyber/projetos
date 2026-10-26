@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Modo seguro inicial do SlackUpdate: somente leitura de pacotes locais."""
+"""Interface gráfica para consultar e instalar atualizações no Slackware."""
 
+from datetime import datetime
 import gi
 import re
 import subprocess
@@ -8,27 +9,31 @@ import threading
 from urllib.error import URLError
 from urllib.request import urlopen
 from pathlib import Path
-from file_inspection import default_roots, scan_files, cleanup_identity, trash_selected
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gio, GLib, Gtk
+from gi.repository import GLib, Gtk
 
 
-APP_NAME = "SlackUpdate — Protótipo"
+APP_NAME = "SlackUpdate"
 DEVELOPER_CREDIT = "Desenvolvido por JONAS DE OLIVEIRA SALVIANO • VibeCoding"
 PACKAGE_DATABASE = Path("/var/log/packages")
+PACKAGE_CACHE = Path("/var/cache/packages")
 SLACKWARE_VERSION_FILE = Path("/etc/slackware-version")
 SLACKWARE_RELEASE_INDEX = "https://mirrors.slackware.com/slackware/"
+SLACKPKG = Path("/usr/sbin/slackpkg")
+STATE_DIRECTORY = Path.home() / ".local" / "state" / "slackupdate"
+LOG_FILE = STATE_DIRECTORY / "history.log"
 PACKAGE_EXTENSIONS = (".tgz", ".tbz", ".tlz", ".txz")
 PACKAGE_ARCHITECTURES = re.compile(r"^(?:x86_64|i[3-6]86|noarch|fw)$")
 
 
 class SlackUpdate(Gtk.Application):
     def __init__(self):
-        super().__init__(application_id="org.slackware.SlackUpdatePrototype")
+        super().__init__(application_id="com.vibecoding.SlackUpdate")
         self.window = None
-        self.inspection_window = None
         self.store = Gtk.ListStore(bool, str, str, str, str, str)
+        self.has_update_results = False
+        self.busy = False
 
     def do_activate(self):
         if self.window:
@@ -36,6 +41,7 @@ class SlackUpdate(Gtk.Application):
             return
 
         self.window = Gtk.ApplicationWindow(application=self, title=APP_NAME)
+        self.window.set_icon_name("slackupdate")
         self.window.set_default_size(980, 760)
         self.window.set_border_width(16)
         self.window.connect("delete-event", lambda *_: False)
@@ -48,7 +54,7 @@ class SlackUpdate(Gtk.Application):
         title = Gtk.Label()
         title.set_markup("<span size='xx-large' weight='bold'>Slackware™ Update</span>")
         title.set_halign(Gtk.Align.START)
-        subtitle = Gtk.Label(label="Atualizador não oficial • modo seguro, sem alterações automáticas.")
+        subtitle = Gtk.Label(label="Atualizador não oficial • alterações somente após confirmação.")
         subtitle.get_style_context().add_class("dim-label")
         subtitle.set_halign(Gtk.Align.START)
         title_box.pack_start(title, False, False, 0)
@@ -65,7 +71,7 @@ class SlackUpdate(Gtk.Application):
 
         notice = Gtk.InfoBar()
         notice.set_message_type(Gtk.MessageType.INFO)
-        notice.get_content_area().add(Gtk.Label(label="Modo seguro ativo: a consulta on-line só atualiza metadados e nunca instala, remove ou baixa pacotes."))
+        notice.get_content_area().add(Gtk.Label(label="A consulta não instala nada. A instalação exige seleção, confirmação e autenticação administrativa."))
         root.pack_start(notice, False, False, 0)
 
         overview = Gtk.Box(spacing=14)
@@ -122,15 +128,15 @@ class SlackUpdate(Gtk.Application):
         credit.get_style_context().add_class("dim-label")
         footer_left.pack_start(credit, False, False, 0)
         footer.pack_start(footer_left, True, True, 0)
-        cleanup_button = Gtk.Button(label="Verificar arquivos")
-        cleanup_button.set_image(Gtk.Image.new_from_icon_name("system-search-symbolic", Gtk.IconSize.BUTTON))
-        cleanup_button.set_tooltip_text("Consultar temporários, cache e pacotes baixados")
+        cleanup_button = Gtk.Button(label="Limpar atualizações antigas")
+        cleanup_button.set_tooltip_text("Remove somente arquivos de pacotes já baixados; nunca pacotes instalados.")
         cleanup_button.connect("clicked", self.on_cleanup_old_updates)
         footer.pack_end(cleanup_button, False, False, 0)
         self.update_button = Gtk.Button(label="Instalação desativada")
         self.update_button.get_style_context().add_class("suggested-action")
         self.update_button.set_sensitive(False)
-        self.update_button.set_tooltip_text("A instalação será habilitada somente após a validação do modo seguro.")
+        self.update_button.set_tooltip_text("Consulte as atualizações para habilitar a instalação selecionada.")
+        self.update_button.connect("clicked", self.on_install_selected)
         footer.pack_end(self.update_button, False, False, 0)
         root.pack_end(footer, False, False, 0)
 
@@ -265,6 +271,7 @@ class SlackUpdate(Gtk.Application):
             return
 
         self.store.clear()
+        self.has_update_results = False
         for record in records:
             self.store.append((False, self.package_name_from_record(record), record, "—", "Instalado", "—"))
         self.detail_label.set_text(
@@ -272,8 +279,16 @@ class SlackUpdate(Gtk.Application):
         )
         self.status.set_text("Modo seguro: {} pacote(s) instalado(s) lido(s). Nenhuma consulta à internet foi feita.".format(len(records)))
         self.refresh_installed_kernel_status()
+        self.refresh_install_button()
 
     def on_online_check(self, _button):
+        if self.busy:
+            return
+        if not SLACKPKG.is_file():
+            self.show_error("slackpkg não encontrado", "O executável /usr/sbin/slackpkg não está disponível.")
+            return
+        self.busy = True
+        self.refresh_install_button()
         self.status.set_text("Consultando o mirror e preparando a lista de atualizações…")
         self.updates_view.get_buffer().set_text("Consulta em andamento. A autenticação do sistema poderá ser solicitada.")
         threading.Thread(target=self.run_online_check, daemon=True).start()
@@ -305,9 +320,11 @@ class SlackUpdate(Gtk.Application):
             GLib.idle_add(self.show_online_result, "Erro ao iniciar a consulta: {}".format(error), False)
 
     def show_online_result(self, text, success):
+        self.busy = False
         self.updates_view.get_buffer().set_text(text)
         if success:
             candidates = self.populate_update_table(text)
+            self.has_update_results = bool(candidates)
             self.show_kernel_candidates(candidates)
             if candidates:
                 self.status.set_text(
@@ -316,7 +333,9 @@ class SlackUpdate(Gtk.Application):
             else:
                 self.status.set_text("Consulta concluída: nenhuma atualização de pacote foi encontrada.")
         else:
+            self.has_update_results = False
             self.status.set_text("Consulta não concluída. Nenhum pacote foi instalado.")
+        self.refresh_install_button()
         return False
 
     def populate_update_table(self, output):
@@ -340,9 +359,13 @@ class SlackUpdate(Gtk.Application):
 
     def on_kernel_opt_in_changed(self, button):
         if button.get_active():
-            self.status.set_text("Kernel marcado como opcional. Ele só será considerado quando a instalação real for implementada.")
+            self.status.set_text("Kernel liberado para seleção manual. Ele continua desmarcado por padrão.")
         else:
+            for row in self.store:
+                if row[4] == "Kernel":
+                    row[0] = False
             self.status.set_text("Kernel desmarcado. Atualizações de kernel permanecerão fora da instalação.")
+        self.refresh_install_button()
 
     def on_check_release(self, _button):
         self.release_label.set_text("Verificando no mirror oficial…")
@@ -386,146 +409,159 @@ class SlackUpdate(Gtk.Application):
 
     def refresh_status(self):
         count = sum(row[0] for row in self.store)
-        self.status.set_text("{} atualização(ões) selecionada(s) — protótipo sem instalação".format(count))
+        self.status.set_text("{} atualização(ões) selecionada(s).".format(count))
+        self.refresh_install_button()
+
+    def refresh_install_button(self):
+        selected = sum(row[0] for row in self.store) if self.has_update_results else 0
+        enabled = self.has_update_results and selected > 0 and not self.busy
+        self.update_button.set_sensitive(enabled)
+        self.update_button.set_label("Instalar selecionados ({})".format(selected) if enabled else "Instalação desativada")
+
+    def selected_package_names(self):
+        return [row[1] for row in self.store if row[0]]
+
+    def on_install_selected(self, _button):
+        packages = self.selected_package_names()
+        if not packages or self.busy:
+            return
+        kernel_selected = any(name.startswith("kernel-") for name in packages)
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Instalar {} atualização(ões)?".format(len(packages)),
+        )
+        warning = "Os seguintes pacotes serão atualizados:\n\n{}".format("\n".join(packages))
+        if kernel_selected:
+            warning += "\n\nATENÇÃO: há pacotes de kernel selecionados. Confirme seu carregador de inicialização após a atualização."
+        warning += "\n\nA senha administrativa será solicitada. Não desligue o computador durante a operação."
+        dialog.format_secondary_text(warning)
+        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Instalar", Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+        if response != Gtk.ResponseType.OK:
+            return
+        self.busy = True
+        self.refresh_install_button()
+        self.status.set_text("Instalando atualizações selecionadas…")
+        self.updates_view.get_buffer().set_text("Instalação em andamento. Aguarde a conclusão do slackpkg.")
+        threading.Thread(target=self.run_install_selected, args=(packages,), daemon=True).start()
+
+    def run_install_selected(self, packages):
+        command = [
+            "pkexec", str(SLACKPKG), "-batch=on", "-default_answer=y",
+            "-download_all=off", "-dialog=off", "upgrade",
+        ] + packages
+        try:
+            result = subprocess.run(command, text=True, capture_output=True, timeout=1800)
+            output = (result.stdout + "\n" + result.stderr).strip()
+            success = result.returncode == 0
+            self.write_log("upgrade", packages, result.returncode, output)
+            GLib.idle_add(self.show_install_result, output, success)
+        except subprocess.TimeoutExpired as error:
+            output = "A instalação excedeu o limite de tempo. Verifique o sistema antes de tentar novamente."
+            self.write_log("upgrade", packages, 124, output)
+            GLib.idle_add(self.show_install_result, output, False)
+        except OSError as error:
+            output = "Não foi possível iniciar a instalação: {}".format(error)
+            self.write_log("upgrade", packages, 1, output)
+            GLib.idle_add(self.show_install_result, output, False)
+
+    def show_install_result(self, output, success):
+        self.busy = False
+        self.has_update_results = False
+        self.updates_view.get_buffer().set_text(output or "Operação concluída sem saída adicional.")
+        self.update_button.set_sensitive(False)
+        self.update_button.set_label("Instalação desativada")
+        if success:
+            self.status.set_text("Atualizações instaladas. Faça uma nova consulta para atualizar a lista.")
+            self.show_info("Atualização concluída", "Os pacotes selecionados foram processados pelo slackpkg. Consulte novamente para confirmar o estado.")
+        else:
+            self.status.set_text("A instalação não foi concluída. Consulte o relatório técnico e o histórico.")
+            self.show_error("Falha na atualização", "O slackpkg não concluiu a operação. Nenhuma nova tentativa será feita automaticamente.")
+        return False
+
+    @staticmethod
+    def write_log(action, packages, return_code, output):
+        try:
+            STATE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+            with LOG_FILE.open("a", encoding="utf-8") as log:
+                log.write("\n[{}] action={} return_code={}\n".format(datetime.now().isoformat(timespec="seconds"), action, return_code))
+                log.write("packages={}\n".format(",".join(packages)))
+                log.write((output or "(sem saída)") + "\n")
+        except OSError:
+            pass
+
+    def show_info(self, title, message):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window, modal=True, message_type=Gtk.MessageType.INFO,
+            buttons=Gtk.ButtonsType.OK, text=title,
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
+
+    def show_error(self, title, message):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window, modal=True, message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK, text=title,
+        )
+        dialog.format_secondary_text(message)
+        dialog.run()
+        dialog.destroy()
 
     def on_cleanup_old_updates(self, _button):
-        if self.inspection_window is not None:
-            self.inspection_window.present()
+        if self.busy:
             return
-        window = Gtk.ApplicationWindow(application=self, title="SlackUpdate - Arquivos temporários e pacotes")
-        self.inspection_window = window
-        window.set_transient_for(self.window)
-        window.set_destroy_with_parent(True)
-        window.set_default_size(940, 540)
-        window.connect("destroy", self.on_inspection_destroy)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=12)
-        window.add(box)
-        toolbar = Gtk.Box(spacing=10)
-        refresh = Gtk.Button.new_from_icon_name("view-refresh-symbolic", Gtk.IconSize.BUTTON)
-        refresh.set_tooltip_text("Consultar arquivos novamente")
-        toolbar.pack_start(refresh, False, False, 0)
-        delete = Gtk.Button(label="Excluir selecionados")
-        delete.set_image(Gtk.Image.new_from_icon_name("user-trash-symbolic", Gtk.IconSize.BUTTON))
-        delete.set_sensitive(False)
-        toolbar.pack_end(delete, False, False, 0)
-        summary = Gtk.Label(label="Consultando arquivos...")
-        summary.set_line_wrap(True)
-        summary.set_xalign(0)
-        toolbar.pack_start(summary, True, True, 0)
-        box.pack_start(toolbar, False, False, 0)
-        store = Gtk.ListStore(str, str, str, str, str, bool, bool)
-        identities = {}
-        roots = default_roots()
-        tree = Gtk.TreeView(model=store)
-        toggle = Gtk.CellRendererToggle()
-        tree.append_column(Gtk.TreeViewColumn("", toggle, active=5, activatable=6, sensitive=6))
+        if not PACKAGE_CACHE.is_dir():
+            self.show_info("Cache vazio", "O diretório /var/cache/packages não foi encontrado.")
+            return
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.NONE,
+            text="Limpar arquivos de atualizações antigas?",
+        )
+        dialog.format_secondary_text(
+            "Esta ação apagará apenas arquivos de pacotes (.txz, .tgz, .tbz e .tlz) guardados em /var/cache/packages. "
+            "Ela não remove programas instalados. Os arquivos apagados não poderão ser recuperados por este aplicativo."
+        )
+        dialog.add_button("Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Limpar cache", Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+        if response == Gtk.ResponseType.OK:
+            self.busy = True
+            self.refresh_install_button()
+            self.status.set_text("Limpando arquivos antigos do cache…")
+            threading.Thread(target=self.run_cache_cleanup, daemon=True).start()
 
-        def toggled(_renderer, path):
-            if store[path][6]:
-                store[path][5] = not store[path][5]
-            delete.set_sensitive(any(row[5] for row in store))
+    def run_cache_cleanup(self):
+        command = [
+            "pkexec", "/usr/bin/find", str(PACKAGE_CACHE), "-type", "f", "(",
+            "-name", "*.txz", "-o", "-name", "*.tgz", "-o", "-name", "*.tbz", "-o", "-name", "*.tlz",
+            ")", "-delete",
+        ]
+        try:
+            result = subprocess.run(command, text=True, capture_output=True, timeout=300)
+            output = (result.stdout + "\n" + result.stderr).strip()
+            self.write_log("clean-cache", [], result.returncode, output)
+            GLib.idle_add(self.show_cleanup_result, result.returncode == 0, output)
+        except (subprocess.TimeoutExpired, OSError) as error:
+            GLib.idle_add(self.show_cleanup_result, False, str(error))
 
-        toggle.connect("toggled", toggled)
-        for index, title in enumerate(("Arquivo", "Categoria", "Tamanho", "Idade", "Situação")):
-            renderer = Gtk.CellRendererText()
-            column = Gtk.TreeViewColumn(title, renderer, text=index)
-            column.set_resizable(True)
-            tree.append_column(column)
-        scroll = Gtk.ScrolledWindow()
-        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-        scroll.add(tree)
-        box.pack_start(scroll, True, True, 0)
-        details = Gtk.Label()
-        details.set_xalign(0)
-        details.set_line_wrap(True)
-        details.set_selectable(True)
-        box.pack_start(details, False, False, 0)
-
-        def refresh_files(_button=None, report=""):
-            refresh.set_sensitive(False)
-            delete.set_sensitive(False)
-            tree.set_sensitive(False)
-            identities.clear()
-            summary.set_text("Consultando arquivos...")
-            details.set_text("")
-            store.clear()
-
-            def finish(rows, warnings, snapshots):
-                if self.inspection_window is not window:
-                    return False
-                for path, category, size, days, status in rows:
-                    store.append((path, category, GLib.format_size(size), "{} dias".format(days), status, False, path in snapshots))
-                identities.update(snapshots)
-                summary.set_text("{} arquivos | {}".format(
-                    len(rows), GLib.format_size(sum(row[2] for row in rows))))
-                details.set_text("\n".join(filter(None, [report, *warnings[:3]])))
-                refresh.set_sensitive(True)
-                tree.set_sensitive(True)
-                return False
-
-            def work():
-                snapshots = {}
-                try:
-                    rows, warnings = scan_files(roots, self.installed_package_map(), self.parse_package_identifier)
-                    for path, category, _size, _days, _status in rows:
-                        if category != "Pacote baixado":
-                            try:
-                                snapshots[path] = cleanup_identity(path, roots)
-                            except (OSError, ValueError):
-                                pass
-                except Exception as error:
-                    rows, warnings = [], ["Consulta não concluída: {}".format(error)]
-                GLib.idle_add(finish, rows, warnings, snapshots)
-
-            threading.Thread(target=work, daemon=True).start()
-
-        def delete_files(_button):
-            items = [(row[0], identities[row[0]]) for row in store if row[5] and row[6]]
-            if not items:
-                return
-            dialog = Gtk.MessageDialog(transient_for=window, modal=True,
-                message_type=Gtk.MessageType.WARNING, buttons=Gtk.ButtonsType.CANCEL,
-                text="Mover {} arquivos para a lixeira?".format(len(items)))
-            dialog.format_secondary_text(
-                "Feche os aplicativos e navegadores antes de continuar. Arquivos temporários podem estar em uso.\n\n"
-                + "\n".join(path for path, _identity in items[:8])
-                + ("\n..." if len(items) > 8 else ""))
-            dialog.add_button("Mover para a lixeira", Gtk.ResponseType.OK)
-            response = dialog.run()
-            dialog.destroy()
-            if response != Gtk.ResponseType.OK:
-                return
-            delete.set_sensitive(False)
-            refresh.set_sensitive(False)
-            tree.set_sensitive(False)
-            summary.set_text("Movendo arquivos para a lixeira...")
-
-            def trash(path):
-                try:
-                    return Gio.File.new_for_path(path).trash(None)
-                except GLib.Error as error:
-                    raise RuntimeError(error.message) from error
-
-            def finish_delete(completed, errors):
-                if self.inspection_window is window:
-                    report = "{} enviados à lixeira; {} falhas.".format(len(completed), len(errors))
-                    refresh_files(report="\n".join([report, *errors[:3]]))
-                return False
-
-            def work_delete():
-                completed, errors = trash_selected(items, roots, trash)
-                GLib.idle_add(finish_delete, completed, errors)
-
-            threading.Thread(target=work_delete, daemon=True).start()
-
-        delete.connect("clicked", delete_files)
-
-        refresh.connect("clicked", refresh_files)
-        window.show_all()
-        refresh_files()
-
-    def on_inspection_destroy(self, _window):
-        self.inspection_window = None
+    def show_cleanup_result(self, success, output):
+        self.busy = False
+        self.refresh_install_button()
+        if success:
+            self.status.set_text("Cache de pacotes antigos limpo com sucesso.")
+        else:
+            self.status.set_text("Não foi possível limpar o cache: {}".format(output or "erro desconhecido"))
+        return False
 
 
 if __name__ == "__main__":

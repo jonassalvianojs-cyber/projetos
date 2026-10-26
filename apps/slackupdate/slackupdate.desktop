@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SlackUpdate
+GenericName=Atualizador do Slackware
+Comment=Consulte e instale atualizações do Slackware
+Exec=slackupdate
+Icon=slackupdate
+Terminal=false
+Categories=System;
+Keywords=Slackware;Update;Upgrade;Packages;Atualização;
+StartupNotify=true
+X-KDE-SubstituteUID=false
